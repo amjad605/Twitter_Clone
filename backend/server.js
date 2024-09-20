@@ -12,9 +12,9 @@ import swaggerUi from "swagger-ui-express";
 import fs from "fs";
 import { readFile } from "fs/promises";
 import { fileURLToPath } from "url";
-import { dirname, join } from "path";
+import path, { dirname, join } from "path";
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const __dirname = path.resolve();
 
 dotenv.config();
 cloudinary.config({
@@ -28,44 +28,6 @@ const swaggerDocument = JSON.parse(
   fs.readFileSync(join(__dirname, "swagger.json"), "utf8")
 );
 
-// const swaggerDefinition = {
-//   openapi: "3.0.0",
-//   info: {
-//     title: "Your API Documentation",
-//     version: "1.0.0",
-//     description: "Documentation for your Express API",
-//   },
-//   servers: [
-//     {
-//       url: "http://localhost:3000/api",
-//       description: "Development server",
-//     },
-//   ],
-//   components: {
-//     securitySchemes: {
-//       bearerAuth: {
-//         type: "http",
-//         scheme: "bearer",
-//         bearerFormat: "JWT",
-//       },
-//     },
-//   },
-//   security: [
-//     {
-//       bearerAuth: [],
-//     },
-//   ],
-// };
-
-// // Options for the swagger docs
-// const options = {
-//   swaggerDefinition,
-//   apis: ["./backend/routes/*.js"], // Path to your route files
-// };
-
-// const swaggerSpec = swaggerJsdoc(options);
-
-// Use Swagger UI
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 const PORT = process.env.PORT || 5000;
 app.use(cookieParser());
@@ -76,9 +38,12 @@ app.use("/api/users", userRoutes);
 app.use("/api/posts", postRoutes);
 app.use("/api/notifications", notificationRoutes);
 
-app.get("/", (req, res) => {
-  res.send("Hello World");
-});
+if (process.env.NODE_ENV === "production") {
+  app.use(express.static(path.join(__dirname, "/frontend/dist")));
+  app.get("*", (req, res) => {
+    res.sendFile(path.resolve(__dirname, "frontend", "dist", "index.html"));
+  });
+}
 app.listen(PORT, () => {
   console.log(`server is running on port ${PORT}`);
   connectMongoDB();

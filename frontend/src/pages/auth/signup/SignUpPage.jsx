@@ -4,6 +4,7 @@ import { FaUser } from "react-icons/fa";
 import { MdPassword } from "react-icons/md";
 import { MdDriveFileRenameOutline } from "react-icons/md";
 import { useMutation } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "react-hot-toast";
 import XSvg from "../../../components/svgs/X";
 import { MdOutlineMail } from "react-icons/md";
@@ -14,7 +15,7 @@ const SignUpPage = () => {
     fullName: "",
     password: "",
   });
-
+  const queryClient = useQueryClient();
   const { mutate, isError, isPending, error } = useMutation({
     mutationFn: async ({ username, email, fullName, password }) => {
       try {
@@ -41,6 +42,9 @@ const SignUpPage = () => {
         //toast.error(error.message || "Something went wrong");
         throw error; // Ensure the error is thrown so `useMutation` can handle it
       }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["authUser"] });
     },
   });
 

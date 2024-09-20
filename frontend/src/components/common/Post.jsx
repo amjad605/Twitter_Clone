@@ -5,90 +5,119 @@ import { FaRegBookmark } from "react-icons/fa6";
 import { FaTrash } from "react-icons/fa";
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
-import { useMutation } from "@tanstack/react-query";
-import LoadingSpinner from "./LoadingSpinner";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "react-hot-toast";
-import { formatPostDate } from "../../utils/date";
-const Post = ({ post }) => {
-  const queryClient = useQueryClient();
-  const [comment, setComment] = useState("");
-  const postOwner = post.user;
 
+import LoadingSpinner from "./LoadingSpinner";
+import { formatPostDate } from "../../utils/date";
+
+const Post = ({ post }) => {
+  const [comment, setComment] = useState("");
+  const queryClient = useQueryClient();
   const { data: authUser } = queryClient.getQueryData(["authUser"]);
+
+  const postOwner = post.user;
   const isLiked = post.likes.includes(authUser._id);
+
   const isMyPost = authUser._id === post.user._id;
-  console.log(authUser._id);
+
   const formattedDate = formatPostDate(post.createdAt);
-  const { mutate: likePost, isPending: isLiking } = useMutation({
+
+  const { mutate: deletePost, isPending: isDeleting } = useMutation({
     mutationFn: async () => {
       try {
-        const response = await fetch(`/api/posts/like/${post._id}`, {
-          method: "POST",
+        const res = await fetch(`/api/posts/${post._id}`, {
+          method: "DELETE",
         });
-        const data = await response.json();
-        if (!response.ok) {
+        const data = await res.json();
+
+        if (!res.ok) {
           throw new Error(data.error || "Something went wrong");
-        }
-        if (data.error) {
-          throw new Error(data.error);
         }
         return data;
       } catch (error) {
-        console.log(error);
+        throw new Error(error);
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(["posts"]);
+      toast.success("Post deleted successfully");
+      queryClient.invalidateQueries({ queryKey: ["posts"] });
     },
   });
 
-  const { mutate: createComment, isPending: isCommenting } = useMutation({
+  const { mutate: likePost, isPending: isLiking } = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/posts/like/${post._id}`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Something went wrong");
+      return data.updatedLikes;
+    },
+    onMutate: async () => {
+      // Cancel any outgoing refetches for posts
+      await queryClient.cancelQueries(["posts"]);
+
+      // Snapshot the previous value
+      const previousPosts = queryClient.getQueryData(["posts"]);
+
+      // Optimistically update to the new value
+      queryClient.setQueryData(["posts"], (oldData) =>
+        oldData.map((p) => {
+          if (p._id === post._id) {
+            const alreadyLiked = p.likes.includes(authUser._id);
+            return {
+              ...p,
+              likes: alreadyLiked
+                ? p.likes.filter((id) => id !== authUser._id) // Unlike
+                : [...p.likes, authUser._id], // Like
+            };
+          }
+          return p;
+        })
+      );
+
+      // Return context for rollback
+      return { previousPosts };
+    },
+    onError: (error, variables, context) => {
+      // Rollback to previous value
+      queryClient.setQueryData(["posts"], context.previousPosts);
+      toast.error("Failed to update like status");
+    },
+    onSettled: () => {
+      // Refetch posts after mutation
+      // queryClient.invalidateQueries(["posts"]);
+    },
+  });
+
+  const { mutate: commentPost, isPending: isCommenting } = useMutation({
     mutationFn: async () => {
       try {
-        const response = await fetch(`/api/posts/comment/${post._id}`, {
+        const res = await fetch(`/api/posts/comment/${post._id}`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ text: comment }),
         });
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.error || "Failed to comment on post");
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || "Something went wrong");
         }
         return data;
       } catch (error) {
-        console.log(error);
+        throw new Error(error);
       }
     },
     onSuccess: () => {
       toast.success("Comment posted successfully");
       setComment("");
-      queryClient.invalidateQueries(["posts"]);
+      queryClient.invalidateQueries({ queryKey: ["posts"] });
     },
-  });
-  const { mutate: deletePost, isPending: isDeleting } = useMutation({
-    mutationFn: async () => {
-      try {
-        console.log("post id ", post._id);
-        const response = await fetch(`/api/posts/delete/${post._id}`, {
-          method: "DELETE",
-        });
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.message || "Failed to delete post");
-        }
-        const data = await response.json();
-        console.log(data);
-        return data;
-      } catch (error) {
-        console.log(error);
-      }
-    },
-    onSuccess: () => {
-      toast.success("Post deleted successfully");
-      queryClient.invalidateQueries(["posts"]);
+    onError: (error) => {
+      toast.error(error.message);
     },
   });
 
@@ -99,10 +128,11 @@ const Post = ({ post }) => {
   const handlePostComment = (e) => {
     e.preventDefault();
     if (isCommenting) return;
-    createComment();
+    commentPost();
   };
 
   const handleLikePost = () => {
+    if (isLiking) return;
     likePost();
   };
 
@@ -137,6 +167,7 @@ const Post = ({ post }) => {
                     onClick={handleDeletePost}
                   />
                 )}
+
                 {isDeleting && <LoadingSpinner size="sm" />}
               </span>
             )}
@@ -216,11 +247,7 @@ const Post = ({ post }) => {
                       onChange={(e) => setComment(e.target.value)}
                     />
                     <button className="btn btn-primary rounded-full btn-sm text-white px-4">
-                      {isCommenting ? (
-                        <span className="loading loading-spinner loading-md"></span>
-                      ) : (
-                        "Post"
-                      )}
+                      {isCommenting ? <LoadingSpinner size="md" /> : "Post"}
                     </button>
                   </form>
                 </div>
@@ -238,16 +265,17 @@ const Post = ({ post }) => {
                 className="flex gap-1 items-center group cursor-pointer"
                 onClick={handleLikePost}
               >
-                {!isLiked && (
+                {isLiking && <LoadingSpinner size="sm" />}
+                {!isLiked && !isLiking && (
                   <FaRegHeart className="w-4 h-4 cursor-pointer text-slate-500 group-hover:text-pink-500" />
                 )}
-                {isLiked && (
+                {isLiked && !isLiking && (
                   <FaRegHeart className="w-4 h-4 cursor-pointer text-pink-500 " />
                 )}
 
                 <span
-                  className={`text-sm text-slate-500 group-hover:text-pink-500 ${
-                    isLiked ? "text-pink-500" : ""
+                  className={`text-sm  group-hover:text-pink-500 ${
+                    isLiked ? "text-pink-500" : "text-slate-500"
                   }`}
                 >
                   {post.likes.length}

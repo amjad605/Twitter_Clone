@@ -24,62 +24,50 @@ const Posts = ({ feedType, username, userId }) => {
   const {
     data: posts,
     isLoading,
-    isError,
-    error,
     refetch,
     isRefetching,
   } = useQuery({
-    queryKey: ["posts", feedType],
+    queryKey: ["posts"],
     queryFn: async () => {
-      const response = await fetch(POST_ENDPOINT);
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to fetch posts");
+      try {
+        const res = await fetch(POST_ENDPOINT);
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || "Something went wrong");
+        }
+
+        return data.posts;
+      } catch (error) {
+        throw new Error(error);
       }
-      const data = await response.json();
-
-      // Log data to inspect its structure
-      console.log("API Response:", data);
-
-      return data.posts;
     },
-    retry: false,
   });
+
   useEffect(() => {
     refetch();
-  }, [feedType, refetch, username, refetch]);
-  if (isLoading || isRefetching) {
-    return (
-      <div className="flex flex-col justify-center">
-        <PostSkeleton />
-        <PostSkeleton />
-        <PostSkeleton />
-      </div>
-    );
-  }
-
-  if (isError) {
-    return <p className="text-center my-4">Error: {error.message}</p>;
-  }
-
-  // Check if posts is an array before rendering
-  if (!Array.isArray(posts)) {
-    return (
-      <p className="text-center my-4">No posts found or invalid response.</p>
-    );
-  }
-
-  if (posts.length === 0) {
-    return <p className="text-center my-4">No posts in this tab. Switch 👻</p>;
-  }
+  }, [feedType, refetch, username]);
 
   return (
-    <div>
-      {posts.map((post) => (
-        <Post key={post._id} post={post} />
-      ))}
-    </div>
+    <>
+      {(isLoading || isRefetching) && (
+        <div className="flex flex-col justify-center">
+          <PostSkeleton />
+          <PostSkeleton />
+          <PostSkeleton />
+        </div>
+      )}
+      {!isLoading && !isRefetching && posts?.length === 0 && (
+        <p className="text-center my-4">No posts in this tab. Switch 👻</p>
+      )}
+      {!isLoading && !isRefetching && posts && (
+        <div>
+          {posts.map((post) => (
+            <Post key={post._id} post={post} />
+          ))}
+        </div>
+      )}
+    </>
   );
 };
-
 export default Posts;
